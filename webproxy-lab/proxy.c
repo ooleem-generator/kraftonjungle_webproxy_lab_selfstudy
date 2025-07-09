@@ -10,6 +10,7 @@ static const char *user_agent_hdr =
     "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 "
     "Firefox/10.0.3\r\n";
 
+void *thread(void *vargp);
 void doit_proxy(int conn_client_fd);
 void parse_uri(char *uri, char *host, char *port, char *new_uri);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
@@ -17,10 +18,11 @@ void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longms
 
 int main(int argc, char **argv) // 명령줄 인자로 전달받은 포트(4500)에서 연결 요청 수신
 {
-  int listenfd, conn_client_fd;
+  int listenfd, *conn_client_fdp;
   char hostname[MAXLINE], port[MAXLINE];
   socklen_t clientlen;
   struct sockaddr_storage clientaddr;
+  pthread_t tid;
 
   if (argc != 2)
   {
@@ -33,27 +35,34 @@ int main(int argc, char **argv) // 명령줄 인자로 전달받은 포트(4500)
   while (1) // 일반적인 무한 서버 루프
   {
     clientlen = sizeof(clientaddr);
-    conn_client_fd = Accept(listenfd, (SA *)&clientaddr, &clientlen); // 연결 수락 후 connfd로 descriptor 반환
+    conn_client_fdp = Malloc(sizeof(int));
+    *conn_client_fdp = Accept(listenfd, (SA *)&clientaddr, &clientlen); // 연결 수락 후 connfd로 descriptor 반환
     Getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE, 0); // 클라이언트 정보가 hostname과 port에 각각 담김
     printf("Accepted connection from (%s, %s)\n", hostname, port);
-    doit_proxy(conn_client_fd);  // HTTP 트랜젝션 수행
-    Close(conn_client_fd); // 연결 종료
+    Pthread_create(&tid, NULL, thread, conn_client_fdp);
+    
   }
 
+}
+
+void *thread(void *vargp)
+{
+  int conn_client_fd = *((int *)vargp);
+  Pthread_detach(pthread_self());
+  Free(vargp);
+  doit_proxy(conn_client_fd);
+  Close(conn_client_fd); // 연결 종료
+  return NULL;
 }
 
 void doit_proxy(int conn_client_fd) // 요청 한 번당 다시 서버에 보내고, 받아서 클라이언트에 전송해야 함
 {
   int n;
-  int is_binary; // 서버 응답이 텍스트인지 바이너리인지 확인
   char *ptr; // 헤더 파싱할때 쓸 포인터
-  int content_length; // 서버 응답 헤더에 있는 content-length 저장용
   int conn_server_fd; // 서버랑 통신할때쓰는 fd
   char original_buf[MAXLINE]; // 클라이언트로부터 받은 원본 헤더용 buffer
   char modify_buf[MAXLINE]; // 프록시에서 수정한 헤더 저장 및 발송용 buffer
   char response_buf[MAXLINE]; // 서버로부터 수신한 응답 저장 및 발송용 buffer
-  char responsetoclient_buf[MAXLINE];
-  char *responsebody_buf;
   char method[MAXLINE], uri[MAXLINE], version[MAXLINE]; // 헤더 맨 첫 줄에서 각각 저장 
   char host[MAXLINE], port[MAXLINE], new_uri[MAXLINE]; // parse_uri에서 받아올 예정
   rio_t rio_request; // request용 rio 구조체
