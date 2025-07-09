@@ -5,6 +5,9 @@
 #ifndef __CSAPP_H__
 #define __CSAPP_H__
 
+#define _GNU_SOURCE
+#define _POSIX_C_SOURCE 200809L
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -64,7 +67,7 @@ extern char **environ; /* Defined by libc */
 void unix_error(char *msg);
 void posix_error(int code, char *msg);
 void dns_error(char *msg);
-void gai_error(int code, char *msg);
+void csapp_gai_error(int code, char *msg);
 void app_error(char *msg);
 
 /* Process control wrappers */

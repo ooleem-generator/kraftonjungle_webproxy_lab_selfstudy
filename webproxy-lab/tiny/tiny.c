@@ -112,7 +112,7 @@ void read_requesthdrs(rio_t *rp)
 {
   char buf[MAXLINE];
 
-  Rio_readlineb(rp, buf, MAXLINE);
+  //Rio_readlineb(rp, buf, MAXLINE); // Host 정보만 출력하지 않음
   while(strcmp(buf, "\r\n")) {
     Rio_readlineb(rp, buf, MAXLINE);
     printf("%s", buf);
@@ -165,11 +165,19 @@ void serve_static(int fd, char *filename, int filesize)
   printf("%s", buf);
 
   /* Send response body to client */
-  srcfd = Open(filename, O_RDONLY, 0); // Open()으로 파일 열기
-  srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0); // 파일을 메모리에 매핑 (가상 메모리의 접근)
-  Close(srcfd); // 파일 디스크립터 닫기
-  Rio_writen(fd, srcp, filesize); // 매핑된 메모리에서 fd로 직접 전송
-  Munmap(srcp, filesize); // 매핑 해제 (메모리 누수 방지)
+  // srcfd = Open(filename, O_RDONLY, 0); // Open()으로 파일 열기
+  // srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0); // 파일을 메모리에 매핑 (가상 메모리의 접근)
+  // Close(srcfd); // 파일 디스크립터 닫기
+  // Rio_writen(fd, srcp, filesize); // 매핑된 메모리에서 fd로 직접 전송
+  // Munmap(srcp, filesize); // 매핑 해제 (메모리 누수 방지)
+
+  // Homework Problem 11.10
+  srcfd = Open(filename, O_RDONLY, 0);
+  srcp = malloc(filesize);
+  Rio_readn(srcfd, srcp, filesize);
+  Close(srcfd);
+  Rio_writen(fd, srcp, filesize);
+  free(srcp);
 
 }
 
@@ -184,6 +192,8 @@ void get_filetype(char *filename, char *filetype)
     strcpy(filetype, "image/png");
   else if (strstr(filename, ".jpg"))
     strcpy(filetype, "image/jpg");
+  else if (strstr(filename, ".mp4"))
+    strcpy(filetype, "application/mp4");
   else
     strcpy(filetype, "text/plain");
 }
