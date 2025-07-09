@@ -44,6 +44,7 @@ int main(int argc, char **argv) // 명령줄 인자로 전달받은 포트(4500)
 
 void doit_proxy(int conn_client_fd) // 요청 한 번당 다시 서버에 보내고, 받아서 클라이언트에 전송해야 함
 {
+  int n;
   int is_binary; // 서버 응답이 텍스트인지 바이너리인지 확인
   char *ptr; // 헤더 파싱할때 쓸 포인터
   int content_length; // 서버 응답 헤더에 있는 content-length 저장용
@@ -106,43 +107,47 @@ void doit_proxy(int conn_client_fd) // 요청 한 번당 다시 서버에 보내
   printf("Modified Request headers:\n");
   printf("%s", modify_buf); // 어떻게 보냈는지 확인
 
-  /* 여기서부터 서버 응답 헤더 수신, 클라이언트로 발신 */
-  while (strcmp(response_buf, "\r\n")) {
-    Rio_readlineb(&rio_response, response_buf, MAXLINE);
-    if ((ptr = strstr(response_buf, "Content-length")) == response_buf) {
-      sscanf(response_buf, "%*s %d", &content_length);
-    }  
+  /* 여기서부터 서버 응답 수신, 클라이언트로 발신 */
+  while ((n = Rio_readnb(&rio_response, response_buf, MAXLINE)) != 0) {
+    Rio_writen(conn_client_fd, response_buf, n);
+  }
 
-    if ((ptr = strstr(response_buf, "Content-type")) == response_buf) {
-      ptr = strchr(response_buf, ' ');
-      if (strstr(ptr+1, "text")) {
-        is_binary = 0;
-      }
-      else {
-        is_binary = 1;
-      }
-    }
+  // while (strcmp(response_buf, "\r\n")) {
+  //   Rio_readlineb(&rio_response, response_buf, MAXLINE);
+  //   if ((ptr = strstr(response_buf, "Content-length")) == response_buf) {
+  //     sscanf(response_buf, "%*s %d", &content_length);
+  //   }  
+
+  //   if ((ptr = strstr(response_buf, "Content-type")) == response_buf) {
+  //     ptr = strchr(response_buf, ' ');
+  //     if (strstr(ptr+1, "text")) {
+  //       is_binary = 0;
+  //     }
+  //     else {
+  //       is_binary = 1;
+  //     }
+  //   }
     
-    sprintf(responsetoclient_buf, "%s%s", responsetoclient_buf, response_buf);
-  }
-  *response_buf = "";
-  Rio_writen(conn_client_fd, responsetoclient_buf, strlen(responsetoclient_buf));
-  printf("Response headers:\n");
-  printf("%s", responsetoclient_buf);
+  //   sprintf(responsetoclient_buf, "%s%s", responsetoclient_buf, response_buf);
+  // }
+  // *response_buf = "";
+  // Rio_writen(conn_client_fd, responsetoclient_buf, strlen(responsetoclient_buf));
+  // printf("Response headers:\n");
+  // printf("%s", responsetoclient_buf);
 
-  /* 여기서부터 서버 응답 본문 수신, 클라이언트로 발신 */
+  // /* 여기서부터 서버 응답 본문 수신, 클라이언트로 발신 */
 
-  if (is_binary) {
-    responsebody_buf = malloc(content_length);
-    Rio_readnb(&rio_response, responsebody_buf, content_length);
-    Rio_writen(conn_client_fd, responsebody_buf, content_length);
-    free(responsebody_buf);
-  }
-  else {
-    while (Rio_readlineb(&rio_response, response_buf, MAXLINE) != 0) {
-      Rio_writen(conn_client_fd, response_buf, strlen(response_buf)); 
-    }
-  }
+  // if (is_binary) {
+  //   responsebody_buf = malloc(content_length);
+  //   Rio_readnb(&rio_response, responsebody_buf, content_length);
+  //   Rio_writen(conn_client_fd, responsebody_buf, content_length);
+  //   free(responsebody_buf);
+  // }
+  // else {
+  //   while (Rio_readlineb(&rio_response, response_buf, MAXLINE) != 0) {
+  //     Rio_writen(conn_client_fd, response_buf, strlen(response_buf)); 
+  //   }
+  // }
 
   Close(conn_server_fd);
 
