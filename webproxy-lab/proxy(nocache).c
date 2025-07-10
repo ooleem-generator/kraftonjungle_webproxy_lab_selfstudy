@@ -10,30 +10,11 @@ static const char *user_agent_hdr =
     "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 "
     "Firefox/10.0.3\r\n";
 
-typedef struct Cache_node {
-
-  char *cached_uri;
-  //char *cached_header;
-  int cached_content_size;
-  char *cached_content;
-  struct Cache_node *next;
-
-} Cache_node;
-
-typedef struct {
-
-  int cache_total_size;
-  Cache_node *head;
-
-} Cachelist;
-
-
-
 void *thread(void *vargp);
 void doit_proxy(int conn_client_fd);
 void parse_uri(char *uri, char *host, char *port, char *new_uri);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
-Cachelist proxy_cache;
+
 
 int main(int argc, char **argv) // 명령줄 인자로 전달받은 포트(4500)에서 연결 요청 수신
 {
@@ -42,9 +23,6 @@ int main(int argc, char **argv) // 명령줄 인자로 전달받은 포트(4500)
   socklen_t clientlen;
   struct sockaddr_storage clientaddr;
   pthread_t tid;
-
-  proxy_cache.cache_total_size = 0;
-  proxy_cache.head = NULL;
 
   if (argc != 2)
   {
@@ -92,8 +70,6 @@ void doit_proxy(int conn_client_fd) // 요청 한 번당 다시 서버에 보내
   char host[MAXLINE], port[MAXLINE], new_uri[MAXLINE]; // parse_uri에서 받아올 예정
   rio_t rio_request; // request용 rio 구조체
   rio_t rio_response; // response용 rio 구조체
-  Cache_node *new_cache_node = NULL;
-  Cache_node *cacheptr = proxy_cache.head;
 
   /* Read request line and headers */
   Rio_readinitb(&rio_request, conn_client_fd); // request 수신용 rio 초기화
@@ -111,24 +87,7 @@ void doit_proxy(int conn_client_fd) // 요청 한 번당 다시 서버에 보내
     return;
   }
   
-  /* 여기서부터 캐시 검색 */
-
-
-
-  /* 이 밑으로는 캐시에 없는 상황 */
-
   parse_uri(uri, host, port, new_uri); // URI를 host, port, 뒤에 붙은 새로운 new_uri 문자열로 파싱
-
-  while (cacheptr != NULL) {
-    if (!strcmp(cacheptr->cached_uri, new_uri)) {
-      //Rio_writen(conn_client_fd, cacheptr->cached_header, strlen(cacheptr->cached_header));
-      Rio_writen(conn_client_fd, cacheptr->cached_content, strlen(cacheptr->cached_content));
-      return;
-    }
-    else {
-      cacheptr = cacheptr->next;
-    }
-  }
 
   conn_server_fd = Open_clientfd(host, port); // 파싱한 정보를 바탕으로 서버랑 연결하는 fd 새로 오픈
   Rio_readinitb(&rio_response, conn_server_fd); // response 수신용 rio 초기화
@@ -155,7 +114,7 @@ void doit_proxy(int conn_client_fd) // 요청 한 번당 다시 서버에 보내
       sprintf(modify_buf, "%s%s", modify_buf, original_buf);
     }
   }
-  
+  //*original_buf = "";
   Rio_writen(conn_server_fd, modify_buf, strlen(modify_buf)); // 완성된 수정 헤더 발송
   printf("Modified Request headers:\n");
   printf("%s", modify_buf); // 어떻게 보냈는지 확인
@@ -170,36 +129,18 @@ void doit_proxy(int conn_client_fd) // 요청 한 번당 다시 서버에 보내
 
     sprintf(responsetoclient_buf, "%s%s", responsetoclient_buf, response_buf);
   }
-  
+  //*response_buf = "";
   Rio_writen(conn_client_fd, responsetoclient_buf, strlen(responsetoclient_buf));
   printf("Response headers:\n");
   printf("%s", responsetoclient_buf);
 
-  /* 이제 컨텐츠 사이즈에 따라서 캐싱할지 말지 결정 */
-
-  if ((content_length <= MAX_OBJECT_SIZE) && ((content_length+proxy_cache.cache_total_size) <= MAX_CACHE_SIZE)) {
-    new_cache_node = Malloc(sizeof(Cache_node));
-    //new_cache_node->cached_uri = new_uri; -> 이렇게 쓰면 다음 호출 때 new_uri 값이 변경될 때 이전 노드에 들어있던 cached_uri 정보도 변경됨!!!
-    new_cache_node->cached_uri = Malloc(strlen(new_uri)+1); // 여기서 \0 때문에 +1 해줘야된다는거 매우 조심할것!!!
-    strcpy(new_cache_node->cached_uri, new_uri);
-    new_cache_node->cached_content_size = content_length;
-    new_cache_node->next = proxy_cache.head;
-    
-  }
-
   // /* 여기서부터 서버 응답 본문 수신, 클라이언트로 발신 */
 
-  responsebody_buf = Malloc(content_length);
+  responsebody_buf = malloc(content_length);
   Rio_readnb(&rio_response, responsebody_buf, content_length);
   Rio_writen(conn_client_fd, responsebody_buf, content_length);
-  if (new_cache_node != NULL) {
-    new_cache_node->cached_content = Malloc(strlen(responsetoclient_buf)+content_length);
-    strcpy(new_cache_node->cached_content, responsetoclient_buf);
-    strcat(new_cache_node->cached_content, responsebody_buf);
-    proxy_cache.cache_total_size += content_length;
-    proxy_cache.head = new_cache_node;
-  }
   free(responsebody_buf);
+
   Close(conn_server_fd);
 
 }
